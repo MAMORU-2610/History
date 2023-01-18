@@ -4,7 +4,6 @@ import csv
 import struct
 import nfc
 import binascii
-global idm
 num_blocks = 20
 service_code = 0x090f
 ADDRESS = '127.0.0.1'
@@ -104,7 +103,6 @@ class HistoryRecord(object):
 
 
 def connected(tag):
-    global idm
     while True:
         print(tag)
         if isinstance(tag, nfc.tag.tt3.Type3Tag):
