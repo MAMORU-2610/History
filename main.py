@@ -6,6 +6,8 @@ import csv
 import struct
 import nfc
 
+import test_cyberne_code_data
+
 ADDRESS = '127.0.0.1'
 PORT = 12000
 DATABASE_NAME = './History.db'
@@ -207,23 +209,23 @@ def released(tag):
 def preserve_histories(histories):
     for history in histories:
         if history.process == "運賃支払":
-            preserve_to_db(history.month, history.day,
+            preserve_to_db(history.year, history.month, history.day,
                            history.in_station.station_value, history.in_line_key, history.in_station_key,
                            history.out_station.station_value, history.out_line_key, history.out_station_key)
     user_id_manager.count_up()
 
 
-def preserve_to_db(month, day,
+def preserve_to_db(year, month, day,
                    start_station_name, start_station_line_code, start_station_code,
                    end_station_name, end_station_line_code, end_station_code):
     query = '''
-INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?)
+INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 '''
     preserve_connection = sqlite3.connect(DATABASE_NAME)
     preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
     cursor.execute(query,
-                   [month, day, start_station_name, start_station_line_code, start_station_code, end_station_name,
+                   [year, month, day, start_station_name, start_station_line_code, start_station_code, end_station_name,
                     end_station_line_code, end_station_code, user_id_manager.user_id])
     preserve_connection.commit()
     preserve_connection.close()
@@ -275,6 +277,7 @@ def process_database(query, is_sample) -> []:
         cursor.execute(query, [0])
     aligned_histories = []
     for history in cursor:
+        year = history['year']
         month = history['month']
         day = history['day']
         start_station_line_code = history['start_station_line_code']
@@ -288,7 +291,7 @@ def process_database(query, is_sample) -> []:
                                                                                            end_station_line_code,
                                                                                            end_station_code)
         aligned_histories.append(
-            [month, day,
+            [year, month, day,
              start_station_name, start_station_lon, start_station_lat,
              end_station_name, end_station_lon, end_station_lat])
     preserve_connection.close()
@@ -316,8 +319,35 @@ LIMIT 1;
     return station_name, station_lon, station_lat
 
 
+def send_random_histories():
+    while True:
+        sleep(0.5)
+        client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+        start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
+        start_station_line_code = start_station[0]
+        start_station_code = start_station[1]
+        end_station_line_code = end_station[0]
+        end_station_code = end_station[1]
+        connection = sqlite3.connect(DATABASE_NAME)
+        connection.row_factory = sqlite3.Row
+        cursor = connection.cursor()
+        start_station = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
+        end_station = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
+        if start_station is None or end_station is None:
+            return
+        start_station_name, start_station_lon, start_station_lat = start_station
+        end_station_name, end_station_lon, end_station_lat = end_station
+        print('start: ', start_station_name, start_station_lon, start_station_lat)
+        print('end: ', end_station_name, end_station_lon, end_station_lat)
+        connection.close()
+        client.send_message('/line_random',
+                            [start_station_name, start_station_lon, start_station_lat, end_station_name, end_station_lon,
+                             end_station_lat])
+
+
 if __name__ == '__main__':
+    send_random_histories()
     user_id_manager = UserIdManager()
     idm_manager = IdmManager()
-    clf = nfc.ContactlessFrontend('usb')
-    clf.connect(rdwr={'on-connect': main, 'on-release': released})
+    # clf = nfc.ContactlessFrontend('usb')
+    # clf.connect(rdwr={'on-connect': main, 'on-release': released})

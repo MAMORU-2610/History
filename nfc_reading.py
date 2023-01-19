@@ -1,5 +1,6 @@
 from pythonosc import udp_client
 from time import sleep
+import test_cyberne_code_data
 import csv
 import struct
 import nfc
@@ -180,11 +181,11 @@ def main_old():
     #
     # # *** DBから緯度経度を検索 ***
     # # テストデータからランダムに取得
-    # # start_station, end_station = .get_cyberne_random_station_codes()
-    # # start_station_line_code = start_station[0]
-    # # start_station_code = start_station[1]
-    # # end_station_line_code = end_station[0]
-    # # end_station_code = end_station[1]
+    # start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
+    # start_station_line_code = start_station[0]
+    # start_station_code = start_station[1]
+    # end_station_line_code = end_station[0]
+    # end_station_code = end_station[1]
     # connection = sqlite3.connect(DATABASE_NAME)
     # connection.row_factory = sqlite3.Row
     # cursor = connection.cursor()
