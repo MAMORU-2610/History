@@ -117,14 +117,23 @@ class IdmManager:
         self.current = None
 
     def set_current(self, current):
+        if current is '12323223':
+            self.current = current
+            return
         self.old = self.current
         self.current = current
 
     def check(self) -> bool:
         if self.old is None and self.current is None:
             return True
-
+        elif self.current is '12323223':
+            return False
         return self.old != self.current
+
+    def check_sample(self) -> bool:
+        if self.current is '12323223':
+            return False
+        return True
 
 
 # ========================USER_ID==========================
@@ -139,11 +148,12 @@ def main(tag):
     # # TODO: NFC読み込み
     histories = nfc_reading(tag)
     # # TODO: NFC読み込み履歴をDBに保存
+    IdmManager.set_current(binascii.hexlify(tag.idm).decode())
     if IdmManager.check:
         preserve_histories(histories)
-        IdmManager.set_current(binascii.hexlify(tag.idm).decode())
-    # # TODO: DBから履歴を読み込み
     sender_histories()
+    # if IdmManager.check_sample:
+    #     sender_histories(IdmManager.check_sample)
     return True
 
 
@@ -157,8 +167,8 @@ def nfc_reading(tag) -> []:
         data = tag.read_without_encryption([sc], [bc])
         history = HistoryRecord(bytes(data))
         # print_history(history)
-        print(f"{i}")
-        print("".join(['%02x ' % s for s in data]))
+        # print(f"{i}")
+        # print("".join(['%02x ' % s for s in data]))
         histories.append(history)
     return histories
 
@@ -191,19 +201,18 @@ def preserve_histories(histories):
         if history.process is "運賃支払":
             preserve_to_db(history.month, history.day,
                            history.start_station_name, history.start_station_line_code, history.start_station_code,
-                           history.end_station_name, history.end_station_line_code, history.end_station_code,
-                           UserIdManager().user_id)
+                           history.end_station_name, history.end_station_line_code, history.end_station_code)
     UserIdManager().user_id += 1
 
 
 def preserve_to_db(month, day,
                    start_station_name, start_station_line_code, start_station_code,
-                   end_station_name, end_station_line_code, end_station_code,
-                   id):
+                   end_station_name, end_station_line_code, end_station_code):
     query = '''
 INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?)
 '''
     preserve_connection = sqlite3.connect(DATABASE_NAME)
+    preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
 
     cursor.execute(query, [month,
@@ -214,7 +223,7 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?)
                            end_station_name,
                            end_station_line_code,
                            end_station_code,
-                           id
+                           UserIdManager().user_id
                            ])
     preserve_connection.commit()
     preserve_connection.close()
@@ -223,35 +232,65 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?)
 # ========================OSC=========================
 def sender_histories():
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    histories = loading_history
-    for histiry in histories:
-        client.send_message('/line', histiry)
-        sleep(4.0)
+    if IdmManager.check_sample:
+        histories_part, histories_all = loading_history(True)
+        for history in histories_part:
+            client.send_message('/line_part', history)
+        for history in histories_all:
+            client.send_message('/line_all', history)
+    else:
+        histories_sample = loading_history(False)
+        for history in histories_sample:
+            client.send_message('/line_sample', history)
 
 
-def loading_history() -> []:
+def loading_history(check) -> []:
+    if check:
+        query_part = '''
+    SELECT　* FROM all_logs
+    WHERE all_logs.user_id = ?
+    '''
+        query_all = '''
+    SELECT　* FROM all_logs
+    '''
+        aligned_part_histories = process_database(query_part, check)
+        aligned_all_histories = process_database(query_all, check)
+        return aligned_part_histories, aligned_all_histories
+    else:
+        query_sample = '''
+            SELECT　* FROM all_logs
+            WHERE all_logs.user_id = ?
+            '''
+        aligned_sample_histories = process_database(query_sample, check)
+        return aligned_sample_histories
+
+
+def process_database(query, check) -> []:
     preserve_connection = sqlite3.connect(DATABASE_NAME)
+    preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
-    query = '''
-SELECT　*
-FROM all_logs
-WHERE 
-all_logs.user_id = ?
-'''
-    cursor.execute(query, [UserIdManager().user_id-1])
+    if check:
+        cursor.execute(query, [UserIdManager().user_id - 1])
+    else:
+        cursor.execute(query, [0])
     aligned_histories = []
     for history in cursor:
         month = history['month']
         day = history['day']
-        start_station_name = history['start_station_name']
         start_station_line_code = history['start_station_line_code']
         start_station_code = history['start_station_code']
-        end_station_name = history['end_station_name']
         end_station_line_code = history['end_station_line_code']
         end_station_code = history['end_station_code']
-        start_station_lon, start_station_lat = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
-        end_station_lon, end_station_lat = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
-        aligned_histories.append([month, day, start_station_name, start_station_lon, start_station_lat, end_station_name, end_station_lon, end_station_lat])
+        start_station_name, start_station_lon, start_station_lat = fetch_station_by_cyberne_code(cursor,
+                                                                                                 start_station_line_code,
+                                                                                                 start_station_code)
+        end_station_name, end_station_lon, end_station_lat = fetch_station_by_cyberne_code(cursor,
+                                                                                           end_station_line_code,
+                                                                                           end_station_code)
+        aligned_histories.append(
+            [month, day,
+             start_station_name, start_station_lon, start_station_lat,
+             end_station_name, end_station_lon, end_station_lat])
     preserve_connection.close()
     return aligned_histories
 
@@ -280,6 +319,7 @@ LIMIT 1;
 # user_idの要素数をカウント
 def count_all_logs():
     preserve_connection = sqlite3.connect(DATABASE_NAME)
+    preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
     query = '''
 SELECT COUNT(all_logs.user_id = ? OR NULL) FROM all_logs
