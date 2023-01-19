@@ -153,6 +153,56 @@ def sender_idm():
     print("Type3Tag0 ID=%s" % idm)
     return idm
 
+# user_idの要素数をカウント
+def count_all_logs():
+    preserve_connection = sqlite3.connect(DATABASE_NAME)
+    preserve_connection.row_factory = sqlite3.Row
+    cursor = preserve_connection.cursor()
+    query = '''
+SELECT COUNT(all_logs.user_id = ? OR NULL) FROM all_logs
+'''
+    cursor.execute(query, [UserIdManager().user_id - 1])
+    user_id_count = cursor
+    preserve_connection.close()
+    if user_id_count is None:
+        return
+    return user_id_count
+
+
+def main_old():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    # sleep(1)
+    # # TODO: NFC読み込み
+    #
+    # # TODO: NFC読み込み履歴をDBに保存
+    #
+    # # TODO: DBから履歴を読み込み
+    #
+    # # *** DBから緯度経度を検索 ***
+    # # テストデータからランダムに取得
+    # # start_station, end_station = .get_cyberne_random_station_codes()
+    # # start_station_line_code = start_station[0]
+    # # start_station_code = start_station[1]
+    # # end_station_line_code = end_station[0]
+    # # end_station_code = end_station[1]
+    # connection = sqlite3.connect(DATABASE_NAME)
+    # connection.row_factory = sqlite3.Row
+    # cursor = connection.cursor()
+    # start_station = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
+    # end_station = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
+    # if start_station is None or end_station is None:
+    #     return
+    # start_station_name, start_station_lon, start_station_lat = start_station
+    # end_station_name, end_station_lon, end_station_lat = end_station
+    # print('start: ', start_station_name, start_station_lon, start_station_lat)
+    # print('end: ', end_station_name, end_station_lon, end_station_lat)
+    # connection.close()
+    # # *** 緯度と経度を送信 ***
+    # client.send_message('/line',
+    #                     [start_station_name, start_station_lon, start_station_lat, end_station_name, end_station_lon,
+    #                      end_station_lat])
+    client.send_message('/action', [])
+
 
 if __name__ == "__main__":
     clf = nfc.ContactlessFrontend('usb')

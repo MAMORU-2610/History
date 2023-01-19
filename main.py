@@ -2,9 +2,6 @@ from time import sleep
 from pythonosc import udp_client
 import sqlite3
 import binascii
-# import nfc_sample
-# import test_cyberne_code_data
-# import nfc_reading
 import csv
 import struct
 import nfc
@@ -15,6 +12,8 @@ DATABASE_NAME = './History.db'
 num_blocks = 20
 service_code = 0x090f
 count = None
+user_id_manager = None
+idm_manager = None
 
 
 # ========================NFC==========================
@@ -110,30 +109,31 @@ class HistoryRecord(object):
         return (date >> 0) & 0x1f
 
 
-# ========================IDM==========================
+# ========================IDM--010104106b12e41d--==========================
 class IdmManager:
+    __sample_idm = '010104106b12e41d'
+
     def __init__(self):
         self.old = None
         self.current = None
 
     def set_current(self, current):
-        if current is '12323223':
-            self.current = current
-            return
         self.old = self.current
         self.current = current
 
     def check(self) -> bool:
-        if self.old is None and self.current is None:
-            return True
-        elif self.current is '12323223':
-            return False
+        """
+        oldとcurrentが等しいか否かを返す
+        :return:
+        """
         return self.old != self.current
 
-    def check_sample(self) -> bool:
-        if self.current is '12323223':
-            return False
-        return True
+    def current_is_sample(self) -> bool:
+        """
+        currentがサンプルのIDMと一致しているか否かを返す
+        :return:
+        """
+        return self.current == IdmManager.__sample_idm
 
 
 # ========================USER_ID==========================
@@ -141,25 +141,35 @@ class UserIdManager:
     def __init__(self):
         self.user_id = 0
 
+    def count_up(self):
+        self.user_id += 1
+
 
 # ========================NFC==========================
 def main(tag):
     print('connected')
+    print(binascii.hexlify(tag.idm).decode())
     # # TODO: NFC読み込み
     histories = nfc_reading(tag)
+    idm = binascii.hexlify(tag.idm).decode()
+    idm_manager.set_current(idm)
     # # TODO: NFC読み込み履歴をDBに保存
-    IdmManager.set_current(binascii.hexlify(tag.idm).decode())
-    if IdmManager.check:
+    is_sample = idm_manager.current_is_sample()
+    # サンプルの時の処理
+    if is_sample:
+        send_histories(is_sample)
+        return True
+
+    # 通常時の処理
+    if idm_manager.check():
         preserve_histories(histories)
-    sender_histories()
-    # if IdmManager.check_sample:
-    #     sender_histories(IdmManager.check_sample)
+        send_histories(is_sample)
     return True
 
 
 def nfc_reading(tag) -> []:
     if not isinstance(tag, nfc.tag.tt3.Type3Tag):
-        return False
+        return
     sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
     histories = []
     for i in range(num_blocks):
@@ -167,8 +177,6 @@ def nfc_reading(tag) -> []:
         data = tag.read_without_encryption([sc], [bc])
         history = HistoryRecord(bytes(data))
         # print_history(history)
-        # print(f"{i}")
-        # print("".join(['%02x ' % s for s in data]))
         histories.append(history)
     return histories
 
@@ -191,18 +199,18 @@ def print_history(history):
 
 def released(tag):
     print('released')
-    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    client.send_message('/action', [])
+    # client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    # client.send_message('/action', [])
 
 
 # ========================DB=========================
 def preserve_histories(histories):
     for history in histories:
-        if history.process is "運賃支払":
+        if history.process == "運賃支払":
             preserve_to_db(history.month, history.day,
-                           history.start_station_name, history.start_station_line_code, history.start_station_code,
-                           history.end_station_name, history.end_station_line_code, history.end_station_code)
-    UserIdManager().user_id += 1
+                           history.in_station.station_value, history.in_line_key, history.in_station_key,
+                           history.out_station.station_value, history.out_line_key, history.out_station_key)
+    user_id_manager.count_up()
 
 
 def preserve_to_db(month, day,
@@ -214,62 +222,54 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?)
     preserve_connection = sqlite3.connect(DATABASE_NAME)
     preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
-
-    cursor.execute(query, [month,
-                           day,
-                           start_station_name,
-                           start_station_line_code,
-                           start_station_code,
-                           end_station_name,
-                           end_station_line_code,
-                           end_station_code,
-                           UserIdManager().user_id
-                           ])
+    cursor.execute(query,
+                   [month, day, start_station_name, start_station_line_code, start_station_code, end_station_name,
+                    end_station_line_code, end_station_code, user_id_manager.user_id])
     preserve_connection.commit()
     preserve_connection.close()
 
 
 # ========================OSC=========================
-def sender_histories():
+def send_histories(is_sample):
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    if IdmManager.check_sample:
-        histories_part, histories_all = loading_history(True)
+    if is_sample:
+        histories_sample = loading_history(is_sample)
+        for history in histories_sample:
+            client.send_message('/line_sample', history)
+    else:
+        histories_part, histories_all = loading_history(is_sample)
         for history in histories_part:
             client.send_message('/line_part', history)
         for history in histories_all:
             client.send_message('/line_all', history)
-    else:
-        histories_sample = loading_history(False)
-        for history in histories_sample:
-            client.send_message('/line_sample', history)
 
 
-def loading_history(check) -> []:
-    if check:
+def loading_history(is_sample) -> []:
+    if is_sample:
         query_part = '''
-    SELECT　* FROM all_logs
-    WHERE all_logs.user_id = ?
-    '''
+SELECT * FROM all_logs
+WHERE all_logs.user_id = ?
+'''
         query_all = '''
-    SELECT　* FROM all_logs
-    '''
-        aligned_part_histories = process_database(query_part, check)
-        aligned_all_histories = process_database(query_all, check)
+SELECT * FROM all_logs
+'''
+        aligned_part_histories = process_database(query_part, is_sample)
+        aligned_all_histories = process_database(query_all, is_sample)
         return aligned_part_histories, aligned_all_histories
     else:
         query_sample = '''
-            SELECT　* FROM all_logs
-            WHERE all_logs.user_id = ?
-            '''
-        aligned_sample_histories = process_database(query_sample, check)
+SELECT * FROM all_logs
+WHERE all_logs.user_id = ?
+'''
+        aligned_sample_histories = process_database(query_sample, is_sample)
         return aligned_sample_histories
 
 
-def process_database(query, check) -> []:
+def process_database(query, is_sample) -> []:
     preserve_connection = sqlite3.connect(DATABASE_NAME)
     preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
-    if check:
+    if is_sample:
         cursor.execute(query, [UserIdManager().user_id - 1])
     else:
         cursor.execute(query, [0])
@@ -316,57 +316,8 @@ LIMIT 1;
     return station_name, station_lon, station_lat
 
 
-# user_idの要素数をカウント
-def count_all_logs():
-    preserve_connection = sqlite3.connect(DATABASE_NAME)
-    preserve_connection.row_factory = sqlite3.Row
-    cursor = preserve_connection.cursor()
-    query = '''
-SELECT COUNT(all_logs.user_id = ? OR NULL) FROM all_logs
-'''
-    cursor.execute(query, [UserIdManager().user_id - 1])
-    user_id_count = cursor
-    preserve_connection.close()
-    if user_id_count is None:
-        return
-    return user_id_count
-
-
-def main_old():
-    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    # sleep(1)
-    # # TODO: NFC読み込み
-    #
-    # # TODO: NFC読み込み履歴をDBに保存
-    #
-    # # TODO: DBから履歴を読み込み
-    #
-    # # *** DBから緯度経度を検索 ***
-    # # テストデータからランダムに取得
-    # # start_station, end_station = .get_cyberne_random_station_codes()
-    # # start_station_line_code = start_station[0]
-    # # start_station_code = start_station[1]
-    # # end_station_line_code = end_station[0]
-    # # end_station_code = end_station[1]
-    # connection = sqlite3.connect(DATABASE_NAME)
-    # connection.row_factory = sqlite3.Row
-    # cursor = connection.cursor()
-    # start_station = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
-    # end_station = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
-    # if start_station is None or end_station is None:
-    #     return
-    # start_station_name, start_station_lon, start_station_lat = start_station
-    # end_station_name, end_station_lon, end_station_lat = end_station
-    # print('start: ', start_station_name, start_station_lon, start_station_lat)
-    # print('end: ', end_station_name, end_station_lon, end_station_lat)
-    # connection.close()
-    # # *** 緯度と経度を送信 ***
-    # client.send_message('/line',
-    #                     [start_station_name, start_station_lon, start_station_lat, end_station_name, end_station_lon,
-    #                      end_station_lat])
-    client.send_message('/action', [])
-
-
 if __name__ == '__main__':
+    user_id_manager = UserIdManager()
+    idm_manager = IdmManager()
     clf = nfc.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': main, 'on-release': released})
