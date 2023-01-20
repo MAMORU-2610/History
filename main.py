@@ -272,7 +272,7 @@ def process_database(query, is_sample) -> []:
     preserve_connection.row_factory = sqlite3.Row
     cursor = preserve_connection.cursor()
     if is_sample:
-        cursor.execute(query, [UserIdManager().user_id - 1])
+        cursor.execute(query, [user_id_manager.user_id - 1])
     else:
         cursor.execute(query, [0])
     aligned_histories = []
