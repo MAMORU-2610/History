@@ -13,7 +13,6 @@ PORT = 12000
 DATABASE_NAME = './History.db'
 num_blocks = 20
 service_code = 0x090f
-count = None
 user_id_manager = None
 idm_manager = None
 
@@ -143,7 +142,7 @@ class UserIdManager:
     def __init__(self):
         self.user_id = 0
 
-    def count_up(self):
+    def up_count(self):
         self.user_id += 1
 
 
@@ -152,7 +151,10 @@ def main(tag):
     print('connected')
     print(binascii.hexlify(tag.idm).decode())
     # # TODO: NFC読み込み
-    histories = nfc_reading(tag)
+    histories = read_nfc(tag)
+    if histories is None:
+        print('tag_error')
+        return True
     idm = binascii.hexlify(tag.idm).decode()
     idm_manager.set_current(idm)
     # # TODO: NFC読み込み履歴をDBに保存
@@ -163,15 +165,20 @@ def main(tag):
         return True
 
     # 通常時の処理
-    if idm_manager.check():
-        preserve_histories(histories)
+    # 新規の場合
+    not_same_value = idm_manager.check()
+    if not_same_value:
+        save_history(histories)
+        send_histories(is_sample)
+    # 同じ場合
+    else:
         send_histories(is_sample)
     return True
 
 
-def nfc_reading(tag) -> []:
+def read_nfc(tag) -> []:
     if not isinstance(tag, nfc.tag.tt3.Type3Tag):
-        return
+        return None
     sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
     histories = []
     for i in range(num_blocks):
@@ -206,29 +213,30 @@ def released(tag):
 
 
 # ========================DB=========================
-def preserve_histories(histories):
+def save_history(histories):
     for history in histories:
         if history.process == "運賃支払":
-            preserve_to_db(history.year, history.month, history.day,
-                           history.in_station.station_value, history.in_line_key, history.in_station_key,
-                           history.out_station.station_value, history.out_line_key, history.out_station_key)
-    user_id_manager.count_up()
+            save_history_to_db(history.year, history.month, history.day,
+                               history.in_station.station_value, history.in_line_key, history.in_station_key,
+                               history.out_station.station_value, history.out_line_key, history.out_station_key)
+    user_id_manager.up_count()
 
 
-def preserve_to_db(year, month, day,
-                   start_station_name, start_station_line_code, start_station_code,
-                   end_station_name, end_station_line_code, end_station_code):
+def save_history_to_db(year, month, day,
+                       in_station_name, in_station_line_code, in_station_code,
+                       out_station_name, out_station_line_code, out_station_code):
     query = '''
 INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 '''
-    preserve_connection = sqlite3.connect(DATABASE_NAME)
-    preserve_connection.row_factory = sqlite3.Row
-    cursor = preserve_connection.cursor()
+    save_connection = sqlite3.connect(DATABASE_NAME)
+    save_connection.row_factory = sqlite3.Row
+    cursor = save_connection.cursor()
     cursor.execute(query,
-                   [year, month, day, start_station_name, start_station_line_code, start_station_code, end_station_name,
-                    end_station_line_code, end_station_code, user_id_manager.user_id])
-    preserve_connection.commit()
-    preserve_connection.close()
+                   [year, month, day, in_station_name, in_station_line_code, in_station_code,
+                    out_station_name, out_station_line_code, out_station_code,
+                    user_id_manager.user_id])
+    save_connection.commit()
+    save_connection.close()
 
 
 # ========================OSC=========================
@@ -244,62 +252,73 @@ def send_histories(is_sample):
             client.send_message('/line_part', history)
         for history in histories_all:
             client.send_message('/line_all', history)
+    print('send_completed')
+    client.send_message('/action', [])
 
 
 def loading_history(is_sample) -> []:
     if is_sample:
+        query_sample = '''
+SELECT * FROM all_logs
+WHERE all_logs.user_id = ?
+'''
+        aligned_sample_histories = database_process(query_sample, is_sample)
+        return aligned_sample_histories
+
+    else:
+
         query_part = '''
 SELECT * FROM all_logs
 WHERE all_logs.user_id = ?
 '''
         query_all = '''
 SELECT * FROM all_logs
+WHERE all_logs.user_id != ?
 '''
-        aligned_part_histories = process_database(query_part, is_sample)
-        aligned_all_histories = process_database(query_all, is_sample)
+        draw_out_partial = True
+        aligned_part_histories = database_process(query_part, is_sample, draw_out_partial)
+        draw_out_partial = False
+        aligned_all_histories = database_process(query_all, is_sample, draw_out_partial)
         return aligned_part_histories, aligned_all_histories
-    else:
-        query_sample = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id = ?
-'''
-        aligned_sample_histories = process_database(query_sample, is_sample)
-        return aligned_sample_histories
 
 
-def process_database(query, is_sample) -> []:
-    preserve_connection = sqlite3.connect(DATABASE_NAME)
-    preserve_connection.row_factory = sqlite3.Row
-    cursor = preserve_connection.cursor()
+def database_process(query, is_sample, draw_out_partial) -> []:
+    process_connection = sqlite3.connect(DATABASE_NAME)
+    process_connection.row_factory = sqlite3.Row
+    cursor = process_connection.cursor()
     if is_sample:
-        cursor.execute(query, [user_id_manager.user_id - 1])
-    else:
         cursor.execute(query, [0])
-    aligned_histories = []
+    else:
+        if draw_out_partial:
+            cursor.execute(query, [user_id_manager.user_id - 1])
+        else:
+            cursor.execute(query, [0])
+    processed_histories = []
     for history in cursor:
         year = history['year']
         month = history['month']
         day = history['day']
-        start_station_line_code = history['start_station_line_code']
-        start_station_code = history['start_station_code']
-        end_station_line_code = history['end_station_line_code']
-        end_station_code = history['end_station_code']
-        start_station_name, start_station_lon, start_station_lat = fetch_station_by_cyberne_code(cursor,
-                                                                                                 start_station_line_code,
-                                                                                                 start_station_code)
-        end_station_name, end_station_lon, end_station_lat = fetch_station_by_cyberne_code(cursor,
-                                                                                           end_station_line_code,
-                                                                                           end_station_code)
-        aligned_histories.append(
-            [year, month, day,
-             start_station_name, start_station_lon, start_station_lat,
-             end_station_name, end_station_lon, end_station_lat])
-    preserve_connection.close()
-    return aligned_histories
+        in_station_line_code = history['start_station_line_code']
+        in_station_code = history['start_station_code']
+        out_station_line_code = history['end_station_line_code']
+        out_station_code = history['end_station_code']
+        in_station_name, in_station_lon, in_station_lat = fetch_station_by_cyberne_code(cursor,
+                                                                                        in_station_line_code,
+                                                                                        in_station_code)
+        out_station_name, out_station_lon, out_station_lat = fetch_station_by_cyberne_code(cursor,
+                                                                                           out_station_line_code,
+                                                                                           out_station_code)
+        if in_station_name is not None or out_station_name is not None:
+            processed_histories.append(
+                [year, month, day,
+                 in_station_name, in_station_lon, in_station_lat,
+                 out_station_name, out_station_lon, out_station_lat])
+    process_connection.close()
+    return processed_histories
 
 
 # ========================cyberne_code==========================
-def fetch_station_by_cyberne_code(cursor, line_key, station_key):
+def fetch_station_by_cyberne_code(cursor, line_code, station_code):
     query = '''
 SELECT stations.station_name, stations.lon, stations.lat
 FROM cyberne_codes
@@ -309,10 +328,10 @@ cyberne_codes.line_key = ? AND
 cyberne_codes.station_key = ?
 LIMIT 1;
 '''
-    cursor.execute(query, [line_key, station_key])
+    cursor.execute(query, [line_code, station_code])
     station = cursor.fetchone()
     if station is None:
-        return
+        return None, None, None
     station_name = station['station_name']
     station_lon = station['lon']
     station_lat = station['lat']
@@ -341,13 +360,31 @@ def send_random_histories():
         print('end: ', end_station_name, end_station_lon, end_station_lat)
         connection.close()
         client.send_message('/line_random',
-                            [start_station_name, start_station_lon, start_station_lat, end_station_name, end_station_lon,
-                             end_station_lat])
+                            [start_station_name, start_station_lon, start_station_lat,
+                             end_station_name, end_station_lon, end_station_lat])
 
+
+def send_error():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    client.send_message('/error', [])
+
+
+"""
+oscで送るリスト
+'/line_sample', [year, month, day,
+                start_station_name, start_station_lon, start_station_lat,
+                end_station_name, end_station_lon, end_station_lat]
+'/line_part', 同様
+'/line_all', 同様
+'/line_random', [start_station_name, start_station_lon, start_station_lat, 
+                end_station_name, end_station_lon, end_station_lat]
+'/action', []
+'/error', []
+"""
 
 if __name__ == '__main__':
     send_random_histories()
     user_id_manager = UserIdManager()
     idm_manager = IdmManager()
-    # clf = nfc.ContactlessFrontend('usb')
-    # clf.connect(rdwr={'on-connect': main, 'on-release': released})
+    clf = nfc.ContactlessFrontend('usb')
+    clf.connect(rdwr={'on-connect': main, 'on-release': released})
