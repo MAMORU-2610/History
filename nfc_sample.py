@@ -1,5 +1,5 @@
 from pythonosc import udp_client
-import nfc
+import nfc_structs
 import binascii
 
 ADDRESS = '127.0.0.1'
@@ -17,7 +17,7 @@ def connected(tag):
 
 def main():
     try:
-        clf = nfc.ContactlessFrontend('usb')
+        clf = nfc_structs.ContactlessFrontend('usb')
         clf.connect(rdwr={'on-connect': connected})
         client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
         client.send_message('/action', [])

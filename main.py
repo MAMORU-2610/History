@@ -2,11 +2,11 @@ from time import sleep
 from pythonosc import udp_client
 import sqlite3
 import binascii
-import csv
-import struct
-import nfc
-
+import nfc_structs
 import test_cyberne_code_data
+from managers.IdmManager import IdmManager
+from managers.UserIdManager import UserIdManager
+from nfc_structs.HistoryRecord import HistoryRecord
 
 ADDRESS = '127.0.0.1'
 PORT = 12000
@@ -18,135 +18,18 @@ idm_manager = None
 
 
 # ========================NFC==========================
-class StationRecord(object):
-    db = None
-
-    def __init__(self, row):
-        self.area_key = int(row[0], 10)
-        self.line_key = int(row[1], 10)
-        self.station_key = int(row[2], 10)
-        self.company_value = row[3]
-        self.line_value = row[4]
-        self.station_value = row[5]
-
-    @classmethod
-    # classmethodを書くことで、このメソッドのスタティック性を明示する
-    def get_none(cls):
-        # 駅データが見つからないときに使う
-        return cls(["0", "0", "0", "None", "None", "None"])
-
-    @classmethod
-    def get_db(cls, filename):
-        # 駅データのcsvを読み込んでキャッシュする
-        if cls.db is None:
-            cls.db = []
-            for row in csv.reader(open(filename, 'rU'), delimiter=',', dialect=csv.excel_tab):
-                cls.db.append(cls(row))
-        return cls.db
-
-    @classmethod
-    def get_station(cls, line_key, station_key):
-        # 線区コードと駅コードに対応するStationRecordを検索する
-        for station in cls.get_db("CyberneCodes.csv"):
-            if station.line_key == line_key and station.station_key == station_key:
-                return station
-        return cls.get_none()
+def select_max():
+    query = '''
+SELECT MAX(user_id) as max_user_id FROM all_logs
+'''
+    process_connection = sqlite3.connect(DATABASE_NAME)
+    process_connection.row_factory = sqlite3.Row
+    cursor = process_connection.cursor()
+    cursor.execute(query)
+    result = cursor.fetchone()
+    return result['max_user_id']
 
 
-class HistoryRecord(object):
-    def __init__(self, data):
-        # ビッグエンディアンでバイト列を解釈する
-        row_be = struct.unpack('>2B2H4BH4B', data)
-        # リトルエンディアンでバイト列を解釈する
-        row_le = struct.unpack('<2B2H4BH4B', data)
-
-        self.db = None
-        self.console = self.get_console(row_be[0])
-        self.process = self.get_process(row_be[1])
-        self.year = self.get_year(row_be[3])
-        self.month = self.get_month(row_be[3])
-        self.day = self.get_day(row_be[3])
-        self.balance = row_le[8]
-        self.in_station = StationRecord.get_station(row_be[4], row_be[5])
-        self.in_line_key = row_be[4]
-        self.in_station_key = row_be[5]
-        self.out_station = StationRecord.get_station(row_be[6], row_be[7])
-        self.out_line_key = row_be[6]
-        self.out_station_key = row_be[7]
-
-    @classmethod
-    def get_console(cls, key):
-        # よく使われそうなもののみ対応
-        return {
-            0x03: "精算機",
-            0x04: "携帯型端末",
-            0x05: "車載端末",
-            0x12: "券売機",
-            0x16: "改札機",
-            0x1c: "乗継精算機",
-            0xc8: "自販機",
-        }.get(key)
-
-    @classmethod
-    def get_process(cls, key):
-        # よく使われそうなもののみ対応
-        return {
-            0x01: "運賃支払",
-            0x02: "チャージ",
-            0x0f: "バス",
-            0x46: "物販",
-        }.get(key)
-
-    @classmethod
-    def get_year(cls, date):
-        return (date >> 9) & 0x7f
-
-    @classmethod
-    def get_month(cls, date):
-        return (date >> 5) & 0x0f
-
-    @classmethod
-    def get_day(cls, date):
-        return (date >> 0) & 0x1f
-
-
-# ========================IDM--010104106b12e41d--==========================
-class IdmManager:
-    __sample_idm = '010104106b12e41d'
-
-    def __init__(self):
-        self.old = None
-        self.current = None
-
-    def set_current(self, current):
-        self.old = self.current
-        self.current = current
-
-    def check(self) -> bool:
-        """
-        oldとcurrentが等しいか否かを返す
-        :return:
-        """
-        return self.old != self.current
-
-    def current_is_sample(self) -> bool:
-        """
-        currentがサンプルのIDMと一致しているか否かを返す
-        :return:
-        """
-        return self.current == IdmManager.__sample_idm
-
-
-# ========================USER_ID==========================
-class UserIdManager:
-    def __init__(self):
-        self.user_id = 0
-
-    def up_count(self):
-        self.user_id += 1
-
-
-# ========================NFC==========================
 def main(tag):
     print('connected')
     print(binascii.hexlify(tag.idm).decode())
@@ -154,6 +37,7 @@ def main(tag):
     histories = read_nfc(tag)
     if histories is None:
         print('tag_error')
+        send_error()
         return True
     idm = binascii.hexlify(tag.idm).decode()
     idm_manager.set_current(idm)
@@ -166,8 +50,8 @@ def main(tag):
 
     # 通常時の処理
     # 新規の場合
-    not_same_value = idm_manager.check()
-    if not_same_value:
+    not_same_idm = idm_manager.check()
+    if not_same_idm:
         save_history(histories)
         send_histories(is_sample)
     # 同じ場合
@@ -177,12 +61,12 @@ def main(tag):
 
 
 def read_nfc(tag) -> []:
-    if not isinstance(tag, nfc.tag.tt3.Type3Tag):
+    if not isinstance(tag, nfc_structs.tag.tt3.Type3Tag):
         return None
-    sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
+    sc = nfc_structs.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
     histories = []
     for i in range(num_blocks):
-        bc = nfc.tag.tt3.BlockCode(i, service=0)
+        bc = nfc_structs.tag.tt3.BlockCode(i, service=0)
         data = tag.read_without_encryption([sc], [bc])
         history = HistoryRecord(bytes(data))
         # print_history(history)
@@ -208,8 +92,7 @@ def print_history(history):
 
 def released(tag):
     print('released')
-    # client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    # client.send_message('/action', [])
+    send_random_histories()
 
 
 # ========================DB=========================
@@ -262,7 +145,7 @@ def loading_history(is_sample) -> []:
 SELECT * FROM all_logs
 WHERE all_logs.user_id = ?
 '''
-        aligned_sample_histories = database_process(query_sample, is_sample)
+        aligned_sample_histories = database_process(query_sample, is_sample, True)
         return aligned_sample_histories
 
     else:
@@ -384,7 +267,7 @@ oscで送るリスト
 
 if __name__ == '__main__':
     send_random_histories()
-    user_id_manager = UserIdManager()
+    user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
-    clf = nfc.ContactlessFrontend('usb')
+    clf = nfc_structs.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': main, 'on-release': released})
