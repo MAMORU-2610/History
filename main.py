@@ -2,7 +2,7 @@ from time import sleep
 from pythonosc import udp_client
 import sqlite3
 import binascii
-import nfc_structs
+# import nfc_structs
 import test_cyberne_code_data
 from config import DATABASE_NAME, num_blocks, service_code, ADDRESS, PORT
 from managers.IdmManager import IdmManager
@@ -58,12 +58,12 @@ def main(tag):
 
 
 def read_nfc(tag) -> []:
-    if not isinstance(tag, nfc_structs.tag.tt3.Type3Tag):
+    if not isinstance(tag, nfc.tag.tt3.Type3Tag):
         return None
-    sc = nfc_structs.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
+    sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
     histories = []
     for i in range(num_blocks):
-        bc = nfc_structs.tag.tt3.BlockCode(i, service=0)
+        bc = nfc.tag.tt3.BlockCode(i, service=0)
         data = tag.read_without_encryption([sc], [bc])
         history = HistoryRecord(bytes(data))
         # print_history(history)
@@ -263,7 +263,7 @@ oscで送るリスト
 """
 
 if __name__ == '__main__':
-    send_random_histories()
+    # send_random_histories()
     user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
     clf = nfc.ContactlessFrontend('usb')
