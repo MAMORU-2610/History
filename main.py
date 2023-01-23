@@ -60,6 +60,8 @@ def main(tag):
 
 
 def read_nfc(tag) -> []:
+    if isinstance(tag, nfc.tag.tt4.Type4Tag):
+        return None
     if not isinstance(tag, nfc.tag.tt3.Type3Tag):
         return None
     sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
@@ -92,6 +94,7 @@ def print_history(history):
 def released(tag):
     print('released')
     send_random_histories()
+    print('random送ったよ')
 
 
 # ========================DB=========================
@@ -141,6 +144,7 @@ def send_histories(is_sample):
             client.send_message('/line_all', history)
             print('all送ったよ')
     client.send_message('/action', [])
+    print('action送ったよ')
     print('send_completed')
 
 
@@ -243,8 +247,8 @@ def send_random_histories():
             return
         start_station_name, start_station_lon, start_station_lat = start_station
         end_station_name, end_station_lon, end_station_lat = end_station
-        print('start: ', start_station_name, start_station_lon, start_station_lat)
-        print('end: ', end_station_name, end_station_lon, end_station_lat)
+        # print('start: ', start_station_name, start_station_lon, start_station_lat)
+        # print('end: ', end_station_name, end_station_lon, end_station_lat)
         connection.close()
         client.send_message('/line_random',
                             [start_station_name, start_station_lon, start_station_lat,
@@ -254,6 +258,7 @@ def send_random_histories():
 def send_error():
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
     client.send_message('/error', [])
+    print('error送ったよ')
 
 
 """
