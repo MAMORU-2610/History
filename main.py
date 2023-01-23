@@ -8,6 +8,7 @@ from config import DATABASE_NAME, num_blocks, service_code, ADDRESS, PORT
 from managers.IdmManager import IdmManager
 from managers.UserIdManager import UserIdManager
 from nfc_structs.HistoryRecord import HistoryRecord
+import nfc
 
 user_id_manager = None
 idm_manager = None
@@ -265,5 +266,5 @@ if __name__ == '__main__':
     send_random_histories()
     user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
-    clf = nfc_structs.ContactlessFrontend('usb')
+    clf = nfc.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': main, 'on-release': released})
