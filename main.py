@@ -41,21 +41,21 @@ def main(tag):
     is_sample = idm_manager.current_is_sample()
     # サンプルの時の処理
     if is_sample:
-        send_histories(is_sample)
         print('サンプルだよ')
+        send_histories(is_sample)
         return True
 
     # 通常時の処理
     # 新規の場合
     not_same_idm = idm_manager.check()
     if not_same_idm:
+        print('新規だよ')
         save_history(histories)
         send_histories(is_sample)
-        print('新規だよ')
     # 同じ場合
     else:
-        send_histories(is_sample)
         print('同じだよ')
+        send_histories(is_sample)
     return True
 
 
