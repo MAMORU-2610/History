@@ -4,15 +4,11 @@ import sqlite3
 import binascii
 import nfc_structs
 import test_cyberne_code_data
+from config import DATABASE_NAME, num_blocks, service_code, ADDRESS, PORT
 from managers.IdmManager import IdmManager
 from managers.UserIdManager import UserIdManager
 from nfc_structs.HistoryRecord import HistoryRecord
 
-ADDRESS = '127.0.0.1'
-PORT = 12000
-DATABASE_NAME = './History.db'
-num_blocks = 20
-service_code = 0x090f
 user_id_manager = None
 idm_manager = None
 
