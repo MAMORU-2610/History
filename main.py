@@ -28,16 +28,17 @@ SELECT MAX(user_id) as max_user_id FROM all_logs
 
 
 def main(tag):
-    print('connected:', binascii.hexlify(tag.idm).decode())
-    # # TODO: NFC読み込み
+    # nfc読み込み
     histories = read_nfc(tag)
+    # タグが異なる時
     if histories is None:
         print('tag_error')
         send_error()
         return True
+
+    print('connected:', binascii.hexlify(tag.idm).decode())
     idm = binascii.hexlify(tag.idm).decode()
     idm_manager.set_current(idm)
-    # # TODO: NFC読み込み履歴をDBに保存
     is_sample = idm_manager.current_is_sample()
     # サンプルの時の処理
     if is_sample:
