@@ -93,8 +93,8 @@ def print_history(history):
 
 
 def released(tag):
-    print('released')
     send_random_histories()
+    print('released')
     print('random送ったよ')
 
 
@@ -146,7 +146,7 @@ def send_histories(is_sample):
             print('all送ったよ')
     client.send_message('/action', [])
     print('action送ったよ')
-    print('send_completed')
+    print('------------send_completed:No.', user_id_manager.user_id, '------------')
 
 
 def loading_history(is_sample) -> []:
