@@ -134,7 +134,6 @@ def send_sample_histories():
     histories_sample = loading_sample_history()
     for history in histories_sample:
         client.send_message('/line_sample', history)
-
     print('sample送ったよ')
     send_all_histories()
     send_random_histories()
@@ -146,7 +145,6 @@ def send_part_histories():
     histories_part = loading_part_history()
     for history in histories_part:
         client.send_message('/line_part', history)
-
     print('part送ったよ')
     send_all_histories()
     send_random_histories()
@@ -250,7 +248,6 @@ LIMIT 1;
 
 def send_random_histories():
     for i in range(10):
-        sleep(0.1)
         client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
         start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
         start_station_line_code = start_station[0]
@@ -300,3 +297,4 @@ if __name__ == '__main__':
     idm_manager = IdmManager()
     clf = nfc.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': main, 'on-release': released})
+
