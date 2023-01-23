@@ -224,8 +224,8 @@ LIMIT 1;
 
 
 def send_random_histories():
-    while True:
-        sleep(0.5)
+    for i in range(10):
+        sleep(0.1)
         client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
         start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
         start_station_line_code = start_station[0]
