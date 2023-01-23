@@ -1,9 +1,10 @@
+import nfc
 from pythonosc import udp_client
 from time import sleep
 import test_cyberne_code_data
 import csv
 import struct
-import nfc_structs
+# import nfc_structs
 import binascii
 num_blocks = 20
 service_code = 0x090f
@@ -106,11 +107,11 @@ class HistoryRecord(object):
 def connected(tag):
     while True:
         print(tag)
-        if isinstance(tag, nfc_structs.tag.tt3.Type3Tag):
+        if isinstance(tag, nfc.tag.tt3.Type3Tag):
             try:
-                sc = nfc_structs.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
+                sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
                 for i in range(num_blocks):
-                    bc = nfc_structs.tag.tt3.BlockCode(i, service=0)
+                    bc = nfc.tag.tt3.BlockCode(i, service=0)
                     data = tag.read_without_encryption([sc], [bc])
                     history = HistoryRecord(bytes(data))
                     # if history.process is "運賃支払":
@@ -206,5 +207,5 @@ def main_old():
 
 
 if __name__ == "__main__":
-    clf = nfc_structs.ContactlessFrontend('usb')
+    clf = nfc.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': connected})
