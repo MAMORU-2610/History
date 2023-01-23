@@ -2,7 +2,6 @@ from time import sleep
 from pythonosc import udp_client
 import sqlite3
 import binascii
-# import nfc_structs
 import test_cyberne_code_data
 from config import DATABASE_NAME, num_blocks, service_code, ADDRESS, PORT
 from managers.IdmManager import IdmManager
@@ -19,11 +18,12 @@ def select_max():
     query = '''
 SELECT MAX(user_id) as max_user_id FROM all_logs
 '''
-    process_connection = sqlite3.connect(DATABASE_NAME)
-    process_connection.row_factory = sqlite3.Row
-    cursor = process_connection.cursor()
+    connection = sqlite3.connect(DATABASE_NAME)
+    connection.row_factory = sqlite3.Row
+    cursor = connection.cursor()
     cursor.execute(query)
     result = cursor.fetchone()
+    connection.close()
     return result['max_user_id']
 
 
@@ -43,7 +43,7 @@ def main(tag):
     # サンプルの時の処理
     if is_sample:
         print('サンプルだよ')
-        send_histories(is_sample)
+        send_sample_histories()
         return True
 
     # 通常時の処理
@@ -52,17 +52,17 @@ def main(tag):
     if not_same_idm:
         print('新規だよ')
         save_history(histories)
-        send_histories(is_sample)
+        send_part_histories()
     # 同じ場合
     else:
         print('同じだよ')
-        send_histories(is_sample)
+        send_part_histories()
     return True
 
 
 def read_nfc(tag) -> []:
-    if isinstance(tag, nfc.tag.tt4.Type4Tag):
-        return None
+    # if isinstance(tag, nfc.tag.tt4.Type4Tag):
+    #     return None
     if not isinstance(tag, nfc.tag.tt3.Type3Tag):
         return None
     sc = nfc.tag.tt3.ServiceCode(service_code >> 6, service_code & 0x3f)
@@ -93,10 +93,12 @@ def print_history(history):
 
 
 def released(tag):
-    send_random_histories()
     print('released')
-    print('random送ったよ')
-    print('------------send_completed:No.', user_id_manager.user_id, '------------')
+    is_sample = idm_manager.current_is_sample()
+    if is_sample:
+        print('------------send_completed:sample', '------------')
+    else:
+        print('------------send_completed:No.', user_id_manager.user_id - 1, '------------')
 
 
 # ========================DB=========================
@@ -127,66 +129,82 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 
 
 # ========================OSC=========================
-def send_histories(is_sample):
+def send_sample_histories():
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    if is_sample:
-        histories_sample, histories_all = loading_history(is_sample)
-        for history in histories_sample:
-            client.send_message('/line_sample', history)
-            print('sample送ったよ')
-        for history in histories_all:
-            client.send_message('/line_all', history)
-            print('all送ったよ')
-    else:
-        histories_part, histories_all = loading_history(is_sample)
-        for history in histories_part:
-            client.send_message('/line_part', history)
-            print('part送ったよ')
-        for history in histories_all:
-            client.send_message('/line_all', history)
-            print('all送ったよ')
+    histories_sample = loading_sample_history()
+    for history in histories_sample:
+        client.send_message('/line_sample', history)
+
+    print('sample送ったよ')
+    send_all_histories()
+    send_random_histories()
+    send_action()
+
+
+def send_part_histories():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    histories_part = loading_part_history()
+    for history in histories_part:
+        client.send_message('/line_part', history)
+
+    print('part送ったよ')
+    send_all_histories()
+    send_random_histories()
+    send_action()
+
+
+def send_all_histories():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    histories_all = loading_all_history()
+    for history in histories_all:
+        client.send_message('/line_all', history)
+    print('all送ったよ')
+
+
+def send_action():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
     client.send_message('/action', [])
     print('action送ったよ')
 
 
-def loading_history(is_sample) -> []:
-    aligned_histories = []
-    if is_sample:
-        query_sample = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id = ?
-'''
-        aligned_sample_histories = database_process(query_sample, is_sample)
-        aligned_histories.append(aligned_sample_histories)
-
-    else:
-        query_part = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id = ?
-'''
-        aligned_part_histories = database_process(query_part, is_sample)
-        aligned_histories.append(aligned_part_histories)
-
-    query_all = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id != ?
-'''
-    is_sample = True
-    aligned_all_histories = database_process(query_all, is_sample)
-    aligned_histories.append(aligned_all_histories)
-    return aligned_histories
+def loading_sample_history() -> []:
+    query_sample = '''
+    SELECT * FROM all_logs
+    WHERE all_logs.user_id = ?
+    '''
+    bind_value = 0
+    aligned_sample_histories = database_process(query_sample, bind_value)
+    return aligned_sample_histories
 
 
-def database_process(query, is_sample) -> []:
+def loading_all_history() -> []:
+    query_sample = '''
+    SELECT * FROM all_logs
+    WHERE all_logs.user_id != ?
+    '''
+    bind_value = 0
+    aligned_all_histories = database_process(query_sample, bind_value)
+    return aligned_all_histories
+
+
+def loading_part_history() -> []:
+    query_sample = '''
+    SELECT * FROM all_logs
+    WHERE all_logs.user_id != ?
+    '''
+    bind_value = user_id_manager.user_id - 1
+    aligned_all_histories = database_process(query_sample, bind_value)
+    return aligned_all_histories
+
+
+# ========================DB=========================
+def database_process(query, bind_value) -> []:
     process_connection = sqlite3.connect(DATABASE_NAME)
     process_connection.row_factory = sqlite3.Row
     cursor = process_connection.cursor()
-    if is_sample:
-        cursor.execute(query, [0])
-    else:
-        cursor.execute(query, [user_id_manager.user_id - 1])
+    cursor.execute(query, [bind_value])
     processed_histories = []
-    for history in cursor:
+    for history in cursor.fetchall():
         year = history['year']
         month = history['month']
         day = history['day']
@@ -254,6 +272,7 @@ def send_random_histories():
         client.send_message('/line_random',
                             [start_station_name, start_station_lon, start_station_lat,
                              end_station_name, end_station_lon, end_station_lat])
+    print('random送ったよ')
 
 
 def send_error():
