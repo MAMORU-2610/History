@@ -125,10 +125,13 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 def send_histories(is_sample):
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
     if is_sample:
-        histories_sample = loading_history(is_sample)
+        histories_sample, histories_all = loading_history(is_sample)
         for history in histories_sample:
             client.send_message('/line_sample', history)
             print('sample送ったよ')
+        for history in histories_all:
+            client.send_message('/line_all', history)
+            print('all送ったよ')
     else:
         histories_part, histories_all = loading_history(is_sample)
         for history in histories_part:
@@ -142,42 +145,41 @@ def send_histories(is_sample):
 
 
 def loading_history(is_sample) -> []:
+    aligned_histories = []
     if is_sample:
         query_sample = '''
 SELECT * FROM all_logs
 WHERE all_logs.user_id = ?
 '''
-        aligned_sample_histories = database_process(query_sample, is_sample, True)
-        return aligned_sample_histories
+        aligned_sample_histories = database_process(query_sample, is_sample)
+        aligned_histories.append(aligned_sample_histories)
 
     else:
-
         query_part = '''
 SELECT * FROM all_logs
 WHERE all_logs.user_id = ?
 '''
-        query_all = '''
+        aligned_part_histories = database_process(query_part, is_sample)
+        aligned_histories.append(aligned_part_histories)
+
+    query_all = '''
 SELECT * FROM all_logs
 WHERE all_logs.user_id != ?
 '''
-        draw_out_partial = True
-        aligned_part_histories = database_process(query_part, is_sample, draw_out_partial)
-        draw_out_partial = False
-        aligned_all_histories = database_process(query_all, is_sample, draw_out_partial)
-        return aligned_part_histories, aligned_all_histories
+    is_sample = True
+    aligned_all_histories = database_process(query_all, is_sample)
+    aligned_histories.append(aligned_all_histories)
+    return aligned_histories
 
 
-def database_process(query, is_sample, draw_out_partial) -> []:
+def database_process(query, is_sample) -> []:
     process_connection = sqlite3.connect(DATABASE_NAME)
     process_connection.row_factory = sqlite3.Row
     cursor = process_connection.cursor()
     if is_sample:
         cursor.execute(query, [0])
     else:
-        if draw_out_partial:
-            cursor.execute(query, [user_id_manager.user_id - 1])
-        else:
-            cursor.execute(query, [0])
+        cursor.execute(query, [user_id_manager.user_id - 1])
     processed_histories = []
     for history in cursor:
         year = history['year']
