@@ -28,8 +28,7 @@ SELECT MAX(user_id) as max_user_id FROM all_logs
 
 
 def main(tag):
-    print('connected')
-    print(binascii.hexlify(tag.idm).decode())
+    print('connected:', binascii.hexlify(tag.idm).decode())
     # # TODO: NFC読み込み
     histories = read_nfc(tag)
     if histories is None:
@@ -43,6 +42,7 @@ def main(tag):
     # サンプルの時の処理
     if is_sample:
         send_histories(is_sample)
+        print('サンプルだよ')
         return True
 
     # 通常時の処理
@@ -51,9 +51,11 @@ def main(tag):
     if not_same_idm:
         save_history(histories)
         send_histories(is_sample)
+        print('新規だよ')
     # 同じ場合
     else:
         send_histories(is_sample)
+        print('同じだよ')
     return True
 
 
@@ -126,14 +128,17 @@ def send_histories(is_sample):
         histories_sample = loading_history(is_sample)
         for history in histories_sample:
             client.send_message('/line_sample', history)
+            print('sample送ったよ')
     else:
         histories_part, histories_all = loading_history(is_sample)
         for history in histories_part:
             client.send_message('/line_part', history)
+            print('part送ったよ')
         for history in histories_all:
             client.send_message('/line_all', history)
-    print('send_completed')
+            print('all送ったよ')
     client.send_message('/action', [])
+    print('send_completed')
 
 
 def loading_history(is_sample) -> []:
