@@ -108,6 +108,7 @@ def save_history(histories):
             save_history_to_db(history.year, history.month, history.day,
                                history.in_station.station_value, history.in_line_key, history.in_station_key,
                                history.out_station.station_value, history.out_line_key, history.out_station_key)
+    print('保存したよ')
     user_id_manager.up_count()
 
 
@@ -132,9 +133,10 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 def send_sample_histories():
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
     histories_sample = loading_sample_history()
-    for history in histories_sample:
-        client.send_message('/line_sample', history)
-    print('sample送ったよ')
+    # for history in histories_sample:
+    #     client.send_message('/line_sample', history)
+    #     print(history)
+    # print('sample送ったよ')
     send_all_histories()
     send_random_histories()
     send_action()
@@ -231,7 +233,7 @@ def fetch_station_by_cyberne_code(cursor, line_code, station_code):
 SELECT stations.station_name, stations.lon, stations.lat
 FROM cyberne_codes
 JOIN stations on cyberne_codes.station_value = stations.station_name
-WHERE stations.pref_cd = 13 AND
+WHERE (stations.pref_cd = 14 OR stations.pref_cd = 13 OR stations.pref_cd = 12 OR stations.pref_cd = 11) AND
 cyberne_codes.line_key = ? AND
 cyberne_codes.station_key = ?
 LIMIT 1;
@@ -292,7 +294,6 @@ oscで送るリスト
 """
 
 if __name__ == '__main__':
-    # send_random_histories()
     user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
     clf = nfc.ContactlessFrontend('usb')
