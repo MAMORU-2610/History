@@ -1,4 +1,5 @@
 venv
 *.db
 *.sqbpro
+backup_code.py
 .idea

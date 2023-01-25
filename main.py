@@ -2,31 +2,21 @@ from time import sleep
 from pythonosc import udp_client
 import sqlite3
 import binascii
-import test_cyberne_code_data
+import nfc
+
 from config import DATABASE_NAME, num_blocks, service_code, ADDRESS, PORT
 from managers.IdmManager import IdmManager
 from managers.UserIdManager import UserIdManager
+from managers.select_max import select_max
 from nfc_structs.HistoryRecord import HistoryRecord
-import nfc
+import test_cyberne_code_data
+
 
 user_id_manager = None
 idm_manager = None
 
 
 # ========================NFC==========================
-def select_max():
-    query = '''
-SELECT MAX(user_id) as max_user_id FROM all_logs
-'''
-    connection = sqlite3.connect(DATABASE_NAME)
-    connection.row_factory = sqlite3.Row
-    cursor = connection.cursor()
-    cursor.execute(query)
-    result = cursor.fetchone()
-    connection.close()
-    return result['max_user_id']
-
-
 def main(tag):
     # nfc読み込み
     histories = read_nfc(tag)
@@ -76,22 +66,6 @@ def read_nfc(tag) -> []:
     return histories
 
 
-def print_history(history):
-    print(f"端末種: {history.console}")
-    print("処理: %s" % history.process)
-    print("日付: %02d-%02d-%02d" % (history.year, history.month, history.day))
-    print("入線区: %s-%s" % (history.in_station.company_value, history.in_station.line_value))
-    print("入駅順: %s" % history.in_station.station_value)
-    print("入駅コード: %s" % history.in_station_key)
-    print("入路線コード: %s" % history.in_line_key)
-    print("出線区: %s-%s" % (history.out_station.company_value, history.out_station.line_value))
-    print("出駅順: %s" % history.out_station.station_value)
-    print("出駅コード: %s" % history.out_station_key)
-    print("出路線コード: %s" % history.out_line_key)
-    print("残高: %d" % history.balance)
-    print("BIN: ")
-
-
 def released(tag):
     print('released')
     is_sample = idm_manager.current_is_sample()
@@ -101,7 +75,7 @@ def released(tag):
         print('------------send_completed:No.', user_id_manager.user_id - 1, '------------')
 
 
-# ========================DB=========================
+# ========================SAVE=========================
 def save_history(histories):
     for history in histories:
         if history.process == "運賃支払":
@@ -129,14 +103,14 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
     save_connection.close()
 
 
-# ========================OSC=========================
+# ========================SEND=========================
 def send_sample_histories():
     client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
     histories_sample = loading_sample_history()
-    # for history in histories_sample:
-    #     client.send_message('/line_sample', history)
-    #     print(history)
-    # print('sample送ったよ')
+    for history in histories_sample:
+        client.send_message('/line_sample', history)
+        print(history)
+    print('sample送ったよ')
     send_all_histories()
     send_random_histories()
     send_action()
@@ -167,11 +141,18 @@ def send_action():
     print('action送ったよ')
 
 
+def send_error():
+    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
+    client.send_message('/error', [])
+    print('error送ったよ')
+
+
+# ========================LOAD=========================
 def loading_sample_history() -> []:
     query_sample = '''
-    SELECT * FROM all_logs
-    WHERE all_logs.user_id = ?
-    '''
+SELECT * FROM all_logs
+WHERE all_logs.user_id = ?
+'''
     bind_value = 0
     aligned_sample_histories = database_process(query_sample, bind_value)
     return aligned_sample_histories
@@ -179,9 +160,9 @@ def loading_sample_history() -> []:
 
 def loading_all_history() -> []:
     query_sample = '''
-    SELECT * FROM all_logs
-    WHERE all_logs.user_id != ?
-    '''
+SELECT * FROM all_logs
+WHERE all_logs.user_id != ?
+'''
     bind_value = 0
     aligned_all_histories = database_process(query_sample, bind_value)
     return aligned_all_histories
@@ -189,9 +170,9 @@ def loading_all_history() -> []:
 
 def loading_part_history() -> []:
     query_sample = '''
-    SELECT * FROM all_logs
-    WHERE all_logs.user_id != ?
-    '''
+SELECT * FROM all_logs
+WHERE all_logs.user_id = ?
+'''
     bind_value = user_id_manager.user_id - 1
     aligned_all_histories = database_process(query_sample, bind_value)
     return aligned_all_histories
@@ -272,12 +253,6 @@ def send_random_histories():
                             [start_station_name, start_station_lon, start_station_lat,
                              end_station_name, end_station_lon, end_station_lat])
     print('random送ったよ')
-
-
-def send_error():
-    client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
-    client.send_message('/error', [])
-    print('error送ったよ')
 
 
 """
