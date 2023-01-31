@@ -11,7 +11,6 @@ from managers.select_max import select_max
 from nfc_structs.HistoryRecord import HistoryRecord
 import test_cyberne_code_data
 
-
 user_id_manager = None
 idm_manager = None
 
@@ -163,7 +162,12 @@ def loading_all_history() -> []:
 SELECT * FROM all_logs
 WHERE all_logs.user_id != ?
 '''
-    bind_value = 0
+    is_sample = idm_manager.current_is_sample()
+    if is_sample:
+        bind_value = 0
+    else:
+        bind_value = user_id_manager.user_id - 1
+
     aligned_all_histories = database_process(query_sample, bind_value)
     return aligned_all_histories
 
@@ -214,12 +218,16 @@ def fetch_station_by_cyberne_code(cursor, line_code, station_code):
 SELECT stations.station_name, stations.lon, stations.lat
 FROM cyberne_codes
 JOIN stations on cyberne_codes.station_value = stations.station_name
-WHERE (stations.pref_cd = 14 OR stations.pref_cd = 13 OR stations.pref_cd = 12 OR stations.pref_cd = 11) AND
+WHERE (stations.pref_cd = ? OR stations.pref_cd = ? OR stations.pref_cd = ? OR stations.pref_cd = ?) AND
 cyberne_codes.line_key = ? AND
 cyberne_codes.station_key = ?
 LIMIT 1;
 '''
-    cursor.execute(query, [line_code, station_code])
+    saitama_pref = 11
+    chiba_pref = 12
+    tokyo_pref = 13
+    kanagawa_pref = 14
+    cursor.execute(query, [saitama_pref, chiba_pref, tokyo_pref, kanagawa_pref, line_code, station_code])
     station = cursor.fetchone()
     if station is None:
         return None, None, None
@@ -230,7 +238,8 @@ LIMIT 1;
 
 
 def send_random_histories():
-    for i in range(10):
+    for i in range(30):
+        exists_none = True
         client = udp_client.SimpleUDPClient(ADDRESS, PORT, True)
         start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
         start_station_line_code = start_station[0]
@@ -242,16 +251,19 @@ def send_random_histories():
         cursor = connection.cursor()
         start_station = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
         end_station = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
-        if start_station is None or end_station is None:
-            return
+        # if start_station is None or end_station is None:
+        #     return
         start_station_name, start_station_lon, start_station_lat = start_station
         end_station_name, end_station_lon, end_station_lat = end_station
-        # print('start: ', start_station_name, start_station_lon, start_station_lat)
-        # print('end: ', end_station_name, end_station_lon, end_station_lat)
-        connection.close()
-        client.send_message('/line_random',
-                            [start_station_name, start_station_lon, start_station_lat,
-                             end_station_name, end_station_lon, end_station_lat])
+        if start_station_name is None or end_station_name is None:
+            exists_none = False
+        if exists_none:
+            # print('start: ', start_station_name, start_station_lon, start_station_lat)
+            # print('end: ', end_station_name, end_station_lon, end_station_lat)
+            connection.close()
+            client.send_message('/line_random',
+                                [start_station_name, start_station_lon, start_station_lat,
+                                 end_station_name, end_station_lon, end_station_lat])
     print('random送ったよ')
 
 
@@ -269,8 +281,8 @@ oscで送るリスト
 """
 
 if __name__ == '__main__':
+    # send_random_histories()
     user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
     clf = nfc.ContactlessFrontend('usb')
     clf.connect(rdwr={'on-connect': main, 'on-release': released})
-
