@@ -142,6 +142,7 @@ def send_action():
     client_manager.client_point.send_message('/action', [])
     client_manager.client_between.send_message('/action', [])
     client_manager.client_particle.send_message('/action', [])
+    client_manager.client_sound.send_message('/action', [])
     print('action送ったよ')
 
 
@@ -150,6 +151,7 @@ def send_error():
     client_manager.client_point.send_message('/error', [])
     client_manager.client_between.send_message('/error', [])
     client_manager.client_particle.send_message('/error', [])
+    client_manager.client_sound.send_message('/error', [])
     print('error送ったよ')
 
 
