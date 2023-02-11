@@ -61,7 +61,6 @@ def read_nfc(tag) -> []:
         bc = nfc.tag.tt3.BlockCode(i, service=0)
         data = tag.read_without_encryption([sc], [bc])
         history = HistoryRecord(bytes(data))
-        # print_history(history)
         histories.append(history)
     return histories
 
@@ -109,10 +108,8 @@ def send_sample_histories():
     for history in histories_sample:
         client_manager.client_point.send_message('/line_sample', history)
         client_manager.client_between.send_message('/line_sample', history)
-        client_manager.client_particle.send_message('/line_sample', history)
     print('sample送ったよ')
     send_all_histories()
-    send_random_histories()
     send_action()
 
 
@@ -121,19 +118,17 @@ def send_part_histories():
     for history in histories_part:
         client_manager.client_point.send_message('/line_part', history)
         client_manager.client_between.send_message('/line_part', history)
-        client_manager.client_particle.send_message('/line_part', history)
     print('part送ったよ')
     send_all_histories()
-    send_random_histories()
     send_action()
 
 
 def send_all_histories():
     histories_all = loading_all_history()
-    for history in histories_all:
+    for history in histories_all[:100]:
         client_manager.client_point.send_message('/line_all', history)
         client_manager.client_between.send_message('/line_all', history)
-        client_manager.client_particle.send_message('/line_all', history)
+        sleep(0.001)
     print('all送ったよ')
 
 
@@ -141,7 +136,6 @@ def send_action():
     client_manager.client_opening.send_message('/action', [])
     client_manager.client_point.send_message('/action', [])
     client_manager.client_between.send_message('/action', [])
-    client_manager.client_particle.send_message('/action', [])
     client_manager.client_sound.send_message('/action', [])
     print('action送ったよ')
 
@@ -150,7 +144,6 @@ def send_error():
     client_manager.client_opening.send_message('/error', [])
     client_manager.client_point.send_message('/error', [])
     client_manager.client_between.send_message('/error', [])
-    client_manager.client_particle.send_message('/error', [])
     client_manager.client_sound.send_message('/error', [])
     print('error送ったよ')
 
@@ -213,10 +206,10 @@ def database_process(query, bind_value) -> []:
                                                                                            out_station_line_code,
                                                                                            out_station_code)
         if in_station_name is not None or out_station_name is not None:
-            processed_histories.append(
-                [year, month, day,
-                 in_station_name, in_station_lon, in_station_lat,
-                 out_station_name, out_station_lon, out_station_lat])
+            processed_histories.insert(0,
+                                       [year, month, day,
+                                        in_station_name, in_station_lon, in_station_lat,
+                                        out_station_name, out_station_lon, out_station_lat])
     process_connection.close()
     return processed_histories
 
@@ -246,56 +239,7 @@ LIMIT 1;
     return station_name, station_lon, station_lat
 
 
-def send_random_histories():
-    for i in range(30):
-        exists_none = True
-        start_station, end_station = test_cyberne_code_data.get_cyberne_random_station_codes()
-        start_station_line_code = start_station[0]
-        start_station_code = start_station[1]
-        end_station_line_code = end_station[0]
-        end_station_code = end_station[1]
-        connection = sqlite3.connect(DATABASE_NAME)
-        connection.row_factory = sqlite3.Row
-        cursor = connection.cursor()
-        start_station = fetch_station_by_cyberne_code(cursor, start_station_line_code, start_station_code)
-        end_station = fetch_station_by_cyberne_code(cursor, end_station_line_code, end_station_code)
-        # if start_station is None or end_station is None:
-        #     return
-        start_station_name, start_station_lon, start_station_lat = start_station
-        end_station_name, end_station_lon, end_station_lat = end_station
-        if start_station_name is None or end_station_name is None:
-            exists_none = False
-        if exists_none:
-            # print('start: ', start_station_name, start_station_lon, start_station_lat)
-            # print('end: ', end_station_name, end_station_lon, end_station_lat)
-            connection.close()
-            client_manager.client_point.send_message('/line_random',
-                                                     [start_station_name, start_station_lon, start_station_lat,
-                                                      end_station_name, end_station_lon, end_station_lat])
-            client_manager.client_between.send_message('/line_random',
-                                                       [start_station_name, start_station_lon, start_station_lat,
-                                                        end_station_name, end_station_lon, end_station_lat])
-            client_manager.client_particle.send_message('/line_random',
-                                                        [start_station_name, start_station_lon, start_station_lat,
-                                                         end_station_name, end_station_lon, end_station_lat])
-    print('random送ったよ')
-
-
-"""
-oscで送るリスト
-'/line_sample', [year, month, day,
-                start_station_name, start_station_lon, start_station_lat,
-                end_station_name, end_station_lon, end_station_lat]
-'/line_part', 同様
-'/line_all', 同様
-'/line_random', [start_station_name, start_station_lon, start_station_lat, 
-                end_station_name, end_station_lon, end_station_lat]
-'/action', []
-'/error', []
-"""
-
 if __name__ == '__main__':
-    # send_random_histories()
     user_id_manager = UserIdManager(select_max() + 1)
     idm_manager = IdmManager()
     client_manager = ClientManager()
