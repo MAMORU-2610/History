@@ -9,7 +9,6 @@ from managers.UserIdManager import UserIdManager
 from managers.select_max import select_max
 from managers.ClientManager import ClientManager
 from nfc_structs.HistoryRecord import HistoryRecord
-import test_cyberne_code_data
 
 user_id_manager = None
 idm_manager = None
@@ -106,17 +105,17 @@ def send_part_histories():
 
 
 def send_action_sample():
-    client_manager.client_opening.send_message('/action', [])
+    client_manager.client_point.send_message('/line_action_sample', [])
     client_manager.client_sound.send_message('/action', [])
 
 
 def send_action_new_part():
-    client_manager.client_between.send_message('/action', [])
+    client_manager.client_point.send_message('/line_action_new', [])
     client_manager.client_sound.send_message('/action', [])
 
 
 def send_action_past_part():
-    client_manager.client_between.send_message('/action', [])
+    client_manager.client_point.send_message('/line_action_past', [])
     client_manager.client_sound.send_message('/action', [])
 
 
