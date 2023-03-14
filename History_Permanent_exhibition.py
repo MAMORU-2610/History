@@ -1,5 +1,4 @@
 from time import sleep
-from pythonosc import udp_client
 import sqlite3
 import binascii
 import nfc
@@ -23,18 +22,12 @@ def main(tag):
     # タグが異なる時
     if histories is None:
         print('tag_error')
-        send_error()
+        send_action_sample()
         return True
 
     print('connected:', binascii.hexlify(tag.idm).decode())
     idm = binascii.hexlify(tag.idm).decode()
     idm_manager.set_current(idm)
-    is_sample = idm_manager.current_is_sample()
-    # サンプルの時の処理
-    if is_sample:
-        print('サンプルだよ')
-        send_sample_histories()
-        return True
 
     # 通常時の処理
     # 新規の場合
@@ -43,10 +36,11 @@ def main(tag):
         print('新規だよ')
         save_history(histories)
         send_part_histories()
+        send_action_new_part()
     # 同じ場合
     else:
         print('同じだよ')
-        send_part_histories()
+        send_action_past_part()
     return True
 
 
@@ -103,77 +97,30 @@ INSERT INTO all_logs values (?,?,?,?,?,?,?,?,?,?)
 
 
 # ========================SEND=========================
-def send_sample_histories():
-    histories_sample = loading_sample_history()
-    for history in histories_sample:
-        client_manager.client_point.send_message('/line_sample', history)
-        client_manager.client_between.send_message('/line_sample', history)
-    print('sample送ったよ')
-    send_all_histories()
-    send_action()
-
 
 def send_part_histories():
     histories_part = loading_part_history()
     for history in histories_part:
         client_manager.client_point.send_message('/line_part', history)
-        client_manager.client_between.send_message('/line_part', history)
     print('part送ったよ')
-    send_all_histories()
-    send_action()
 
 
-def send_all_histories():
-    histories_all = loading_all_history()
-    for history in histories_all[:100]:
-        client_manager.client_point.send_message('/line_all', history)
-        client_manager.client_between.send_message('/line_all', history)
-        sleep(0.001)
-    print('all送ったよ')
-
-
-def send_action():
+def send_action_sample():
     client_manager.client_opening.send_message('/action', [])
-    client_manager.client_point.send_message('/action', [])
+    client_manager.client_sound.send_message('/action', [])
+
+
+def send_action_new_part():
     client_manager.client_between.send_message('/action', [])
     client_manager.client_sound.send_message('/action', [])
-    print('action送ったよ')
 
 
-def send_error():
-    client_manager.client_opening.send_message('/error', [])
-    client_manager.client_point.send_message('/error', [])
-    client_manager.client_between.send_message('/error', [])
-    client_manager.client_sound.send_message('/error', [])
-    print('error送ったよ')
+def send_action_past_part():
+    client_manager.client_between.send_message('/action', [])
+    client_manager.client_sound.send_message('/action', [])
 
 
 # ========================LOAD=========================
-def loading_sample_history() -> []:
-    query_sample = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id = ?
-'''
-    bind_value = 0
-    aligned_sample_histories = database_process(query_sample, bind_value)
-    return aligned_sample_histories
-
-
-def loading_all_history() -> []:
-    query_all = '''
-SELECT * FROM all_logs
-WHERE all_logs.user_id != ?
-'''
-    is_sample = idm_manager.current_is_sample()
-    if is_sample:
-        bind_value = 0
-    else:
-        bind_value = user_id_manager.user_id - 1
-
-    aligned_all_histories = database_process(query_all, bind_value)
-    return aligned_all_histories
-
-
 def loading_part_history() -> []:
     query_part = '''
 SELECT * FROM all_logs
@@ -199,6 +146,7 @@ def database_process(query, bind_value) -> []:
         in_station_code = history['start_station_code']
         out_station_line_code = history['end_station_line_code']
         out_station_code = history['end_station_code']
+        user_id = history['user_id']
         in_station_name, in_station_lon, in_station_lat = fetch_station_by_cyberne_code(cursor,
                                                                                         in_station_line_code,
                                                                                         in_station_code)
@@ -206,10 +154,10 @@ def database_process(query, bind_value) -> []:
                                                                                            out_station_line_code,
                                                                                            out_station_code)
         if in_station_name is not None and out_station_name is not None:
-            processed_histories.insert(0,
-                                       [year, month, day,
+            processed_histories.append([year, month, day,
                                         in_station_name, in_station_lon, in_station_lat,
-                                        out_station_name, out_station_lon, out_station_lat])
+                                        out_station_name, out_station_lon, out_station_lat,
+                                        user_id])
     process_connection.close()
     return processed_histories
 
